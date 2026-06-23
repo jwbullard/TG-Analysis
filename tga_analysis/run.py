@@ -16,11 +16,40 @@ from .quantify import quantify
 from .smooth import smooth_savgol
 
 
-def process_one(file_path: Path, label: str | None, out_dir: Path) -> dict:
-    run = load_tga(file_path, label=label)
-    sm = smooth_savgol(run.w, run.dT)
+def process_one(
+    file_path: Path,
+    label: str | None,
+    out_dir: Path,
+    *,
+    grid_dT: float = 0.05,
+    sg_poly: int = 3,
+    sg_window_C_range: tuple[float, float] = (0.3, 5.0),
+    sg_n_candidates: int = 20,
+    sg_rho1_threshold: float = 0.05,
+    peak_prominence_frac: float = 0.02,
+    peak_min_separation_C: float = 20.0,
+    baseline_exit_threshold_frac: float = 0.02,
+    baseline_fit_width_C: float = 20.0,
+) -> dict:
+    run = load_tga(file_path, label=label, dT=grid_dT)
+    sm = smooth_savgol(
+        run.w,
+        run.dT,
+        poly_order=sg_poly,
+        window_C_range=sg_window_C_range,
+        n_candidates=sg_n_candidates,
+        rho1_threshold=sg_rho1_threshold,
+    )
     dwdT = dtg_savgol(run.w, run.dT, sm.window_pts, sm.poly_order)
-    events = detect_events(run.T, sm.w_smooth, dwdT)
+    events = detect_events(
+        run.T,
+        sm.w_smooth,
+        dwdT,
+        prominence_frac=peak_prominence_frac,
+        min_separation_C=peak_min_separation_C,
+        baseline_exit_threshold_frac=baseline_exit_threshold_frac,
+        baseline_fit_width_C=baseline_fit_width_C,
+    )
 
     event_rows: list[dict] = []
     for i, ev in enumerate(events, start=1):
@@ -79,16 +108,86 @@ def process_one(file_path: Path, label: str | None, out_dir: Path) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
-        description="TGA batch analysis: smooth, detect events, quantify mass loss."
+        description="TGA batch analysis: smooth, detect events, quantify mass loss.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("batch_list", type=Path, help="Text file listing TGA files.")
     p.add_argument(
         "--out",
         type=Path,
         default=None,
-        help="Output directory (default: ./Results/<batch-list-stem>/).",
+        help="Output directory (default: <batch-list-dir>/Results/<batch-list-stem>/).",
     )
+
+    g_grid = p.add_argument_group("grid")
+    g_grid.add_argument(
+        "--grid-dT",
+        type=float,
+        default=0.05,
+        help="Uniform T-grid spacing (°C) for resampling.",
+    )
+
+    g_sg = p.add_argument_group("Savitzky-Golay smoothing")
+    g_sg.add_argument("--sg-poly", type=int, default=3, help="SG polynomial order.")
+    g_sg.add_argument(
+        "--sg-window-min",
+        type=float,
+        default=0.3,
+        help="Lower bound (°C) of the SG window search range.",
+    )
+    g_sg.add_argument(
+        "--sg-window-max",
+        type=float,
+        default=5.0,
+        help="Upper bound (°C) of the SG window search range.",
+    )
+    g_sg.add_argument(
+        "--sg-n-candidates",
+        type=int,
+        default=20,
+        help="Number of candidate windows sampled across the range.",
+    )
+    g_sg.add_argument(
+        "--sg-rho1-threshold",
+        type=float,
+        default=0.05,
+        help="Max |lag-1 residual autocorrelation| for the chosen window.",
+    )
+
+    g_peak = p.add_argument_group("peak detection / baseline")
+    g_peak.add_argument(
+        "--peak-prominence",
+        type=float,
+        default=0.02,
+        help="Required |DTG| peak prominence as a fraction of run max |DTG|.",
+    )
+    g_peak.add_argument(
+        "--peak-min-sep",
+        type=float,
+        default=20.0,
+        help="Minimum °C separation between detected peaks.",
+    )
+    g_peak.add_argument(
+        "--baseline-threshold",
+        type=float,
+        default=0.02,
+        help="|DTG| fraction of peak below which an event edge is declared.",
+    )
+    g_peak.add_argument(
+        "--baseline-width",
+        type=float,
+        default=20.0,
+        help="Width (°C) of the linear baseline fit window at each event edge.",
+    )
+
     args = p.parse_args(argv)
+
+    if args.sg_window_max <= args.sg_window_min:
+        print(
+            "--sg-window-max must exceed --sg-window-min",
+            file=sys.stderr,
+        )
+        return 2
 
     batch = read_batch_list(args.batch_list)
     if not batch:
@@ -100,11 +199,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    tunables = dict(
+        grid_dT=args.grid_dT,
+        sg_poly=args.sg_poly,
+        sg_window_C_range=(args.sg_window_min, args.sg_window_max),
+        sg_n_candidates=args.sg_n_candidates,
+        sg_rho1_threshold=args.sg_rho1_threshold,
+        peak_prominence_frac=args.peak_prominence,
+        peak_min_separation_C=args.peak_min_sep,
+        baseline_exit_threshold_frac=args.baseline_threshold,
+        baseline_fit_width_C=args.baseline_width,
+    )
+
     summary_rows: list[dict] = []
     all_event_rows: list[dict] = []
     for file_path, label in batch:
         try:
-            info = process_one(file_path, label, out_dir)
+            info = process_one(file_path, label, out_dir, **tunables)
             all_event_rows.extend(info.pop("_event_rows"))
             summary_rows.append(info)
             print(

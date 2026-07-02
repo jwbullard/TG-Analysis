@@ -1,10 +1,20 @@
 """I/O for TGA data files and batch lists.
 
-Reader accepts Excel (.xlsx, .xls) or CSV. The expected columns are
-temperature (°C), weight (% of initial mass), and optionally an
-instrument-supplied derivative dW/dT. Column names are matched by keyword
-so vendor variations ("Sample Temperature", "Weight %", "Deriv. Weight",
-"DTG", etc.) are picked up automatically.
+Two CSV flavors are handled transparently:
+
+  * Plain table — header on row 1, data from row 2.
+  * TA Instruments TRIOS export — ~130 lines of [Section] metadata,
+    then a column-header row containing both 'Temperature' and 'Weight',
+    then a units row ('min,°C,mg,%,...'), then data. Two columns named
+    'Weight' (mg and %) are disambiguated by the units row.
+
+Excel files (.xlsx, .xls) are passed through pandas' Excel reader as
+before.
+
+Column names are matched by keyword so vendor variations ('Sample
+Temperature', 'Weight %', 'Deriv. Weight', 'DTG', etc.) are picked up
+automatically. When both 'Weight (mg)' and 'Weight (%)' are present, the
+percentage column is preferred.
 """
 
 from __future__ import annotations
@@ -31,10 +41,19 @@ class TGARun:
 def _detect_columns(df: pd.DataFrame) -> tuple[str, str, str | None]:
     cols = {str(c).lower().strip(): c for c in df.columns}
     T_col = next((cols[k] for k in cols if "temp" in k), None)
-    W_col = next(
-        (cols[k] for k in cols if "weight" in k and "deriv" not in k and "dtg" not in k),
-        None,
-    )
+    # Prefer Weight (%) over Weight (mg) when both are present (TRIOS export
+    # carries both; the % column is what downstream code assumes).
+    pct_keys = [
+        k for k in cols
+        if "weight" in k and "%" in k and "deriv" not in k and "dtg" not in k
+    ]
+    if pct_keys:
+        W_col = cols[pct_keys[0]]
+    else:
+        W_col = next(
+            (cols[k] for k in cols if "weight" in k and "deriv" not in k and "dtg" not in k),
+            None,
+        )
     D_col = next(
         (cols[k] for k in cols if "deriv" in k or "dtg" in k or "dw/dt" in k),
         None,
@@ -46,11 +65,67 @@ def _detect_columns(df: pd.DataFrame) -> tuple[str, str, str | None]:
     return T_col, W_col, D_col
 
 
+def _looks_numeric(row: pd.Series) -> bool:
+    try:
+        pd.to_numeric(row)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _read_csv(path: Path) -> pd.DataFrame:
+    """Read a CSV that may have a TRIOS-style metadata preamble.
+
+    Scans the first ~500 lines for a header row that contains both a
+    'Temperature' and a 'Weight' token; if found, reads from there and
+    drops a units row if present. Falls back to a plain pd.read_csv if
+    no preamble is detected.
+    """
+    header_row: int | None = None
+    with path.open("r", encoding="utf-8-sig", errors="replace") as f:
+        for i, line in enumerate(f):
+            tokens = [t.strip().lower() for t in line.split(",")]
+            has_T = any("temperature" in t for t in tokens)
+            has_W = any("weight" in t for t in tokens)
+            if has_T and has_W and len(tokens) >= 2:
+                header_row = i
+                break
+            if i > 500:
+                break
+
+    if header_row is None or header_row == 0:
+        df = pd.read_csv(path, encoding="utf-8-sig")
+    else:
+        df = pd.read_csv(path, skiprows=header_row, header=0, encoding="utf-8-sig")
+
+    if len(df) > 0 and not _looks_numeric(df.iloc[0]):
+        units = df.iloc[0].astype(str).tolist()
+        df = df.iloc[1:].reset_index(drop=True)
+        new_cols: list[str] = []
+        for col, unit in zip(df.columns, units):
+            base = str(col).strip()
+            unit = unit.strip()
+            if base.lower().startswith("weight") and not (
+                "deriv" in base.lower() or "dtg" in base.lower()
+            ):
+                if "%" in unit:
+                    new_cols.append("Weight (%)")
+                elif "mg" in unit.lower():
+                    new_cols.append("Weight (mg)")
+                else:
+                    new_cols.append(f"{base} ({unit})")
+            else:
+                new_cols.append(base)
+        df.columns = new_cols
+
+    return df.apply(pd.to_numeric, errors="coerce")
+
+
 def _read_raw(path: Path) -> pd.DataFrame:
     if path.suffix.lower() in (".xlsx", ".xls"):
         return pd.read_excel(path)
     if path.suffix.lower() == ".csv":
-        return pd.read_csv(path)
+        return _read_csv(path)
     raise ValueError(f"Unsupported file extension: {path.suffix}")
 
 

@@ -6,14 +6,96 @@ import argparse
 import sys
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
+from .deconvolve import (
+    baseline_dtg,
+    deconvolve,
+    fit_region_baseline,
+    frazer_suzuki,
+)
 from .derivative import dtg_savgol
 from .events import detect_events
 from .io import load_tga, read_batch_list
 from .plot import plot_run
 from .quantify import quantify
 from .smooth import smooth_savgol
+
+
+_BASELINE_MODES = ("constant", "linear", "alpha")
+_BASELINE_COLS = {
+    "constant": "mass_loss_dtg_area_constant_pct",
+    "linear":   "mass_loss_dtg_area_linear_pct",
+    "alpha":    "mass_loss_dtg_area_alpha_pct",
+}
+
+
+def _empty_event_row(file_name: str, label: str) -> dict:
+    """Skeleton row with all columns present and NaN — keeps the events CSV
+    schema uniform across detected and deconvolved entries."""
+    return {
+        "file": file_name,
+        "label": label,
+        "event": "",
+        "event_kind": "",
+        "peak_T_C": float("nan"),
+        "onset_T_C": float("nan"),
+        "endset_T_C": float("nan"),
+        "event_start_T_C": float("nan"),
+        "event_end_T_C": float("nan"),
+        "peak_dwdT_pct_per_C": float("nan"),
+        "mass_loss_naive_pct": float("nan"),
+        "mass_loss_tangent_pct": float("nan"),
+        "mass_loss_dtg_area_constant_pct": float("nan"),
+        "mass_loss_dtg_area_linear_pct": float("nan"),
+        "mass_loss_dtg_area_alpha_pct": float("nan"),
+        "fwhm_C": float("nan"),
+        "asymmetry_b": float("nan"),
+    }
+
+
+def _plot_deconvolution(
+    T_evt: np.ndarray,
+    y_by_mode: dict[str, np.ndarray],
+    peaks_by_mode: dict[str, list],
+    label: str,
+    region_idx: int,
+    out_path: Path,
+) -> None:
+    """Stack one panel per baseline mode showing the corrected DTG, each
+    fitted Frazer-Suzuki peak, and the sum-of-peaks reconstruction."""
+    fig, axes = plt.subplots(
+        len(_BASELINE_MODES), 1,
+        figsize=(8.5, 3.0 * len(_BASELINE_MODES)),
+        sharex=True, constrained_layout=True,
+    )
+    if len(_BASELINE_MODES) == 1:
+        axes = [axes]
+    for ax, mode in zip(axes, _BASELINE_MODES):
+        y = y_by_mode[mode]
+        peaks = peaks_by_mode[mode]
+        ax.plot(T_evt, y, color="k", lw=0.8, label="corrected DTG")
+        total = np.zeros_like(T_evt)
+        for k, p in enumerate(peaks):
+            y_p = frazer_suzuki(T_evt, p.A, p.T0, p.W, p.b)
+            ax.fill_between(T_evt, 0, y_p, alpha=0.25,
+                            label=f"P{k+1} @ {p.T0:.0f} °C  area = {p.area:.2f} %")
+            total = total + y_p
+        ax.plot(T_evt, total, color="C3", lw=1.0, ls="--", label="Σ FS peaks")
+        ax.axhline(0, color="k", lw=0.4)
+        ax.set_ylabel("-dW/dT (% / °C)")
+        ax.set_title(f"baseline mode: {mode}", fontsize=10, loc="left")
+        ax.legend(loc="upper right", fontsize=8)
+    axes[-1].set_xlabel("Temperature (°C)")
+    fig.suptitle(f"{label}    deconvolution region {region_idx}", fontsize=11)
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
 
 
 def process_one(
@@ -30,6 +112,7 @@ def process_one(
     peak_min_separation_C: float = 20.0,
     baseline_exit_threshold_frac: float = 0.02,
     baseline_fit_width_C: float = 20.0,
+    decon_regions: list[tuple[float, float, int]] | None = None,
 ) -> dict:
     run = load_tga(file_path, label=label, dT=grid_dT)
     sm = smooth_savgol(
@@ -54,24 +137,91 @@ def process_one(
     event_rows: list[dict] = []
     for i, ev in enumerate(events, start=1):
         ml = quantify(run.T, sm.w_smooth, dwdT, ev)
-        event_rows.append(
-            {
-                "file": run.source.name,
-                "label": run.label,
-                "event": i,
-                "peak_T_C": ev.peak_T,
-                "onset_T_C": ev.onset_T,
-                "endset_T_C": ev.endset_T,
-                "event_start_T_C": ev.event_start_T,
-                "event_end_T_C": ev.event_end_T,
-                "peak_dwdT_pct_per_C": ev.peak_dwdT,
-                "mass_loss_naive_pct": ml.naive,
-                "mass_loss_tangent_pct": ml.tangent,
-                "mass_loss_dtg_area_pct": ml.dtg_area,
-            }
+        row = _empty_event_row(run.source.name, run.label)
+        row.update({
+            "event": str(i),
+            "event_kind": "detected",
+            "peak_T_C": ev.peak_T,
+            "onset_T_C": ev.onset_T,
+            "endset_T_C": ev.endset_T,
+            "event_start_T_C": ev.event_start_T,
+            "event_end_T_C": ev.event_end_T,
+            "peak_dwdT_pct_per_C": ev.peak_dwdT,
+            "mass_loss_naive_pct": ml.naive,
+            "mass_loss_tangent_pct": ml.tangent,
+            "mass_loss_dtg_area_constant_pct": ml.dtg_area_constant,
+            "mass_loss_dtg_area_linear_pct": ml.dtg_area_linear,
+            "mass_loss_dtg_area_alpha_pct": ml.dtg_area_alpha,
+        })
+        event_rows.append(row)
+
+    decon_rows: list[dict] = []
+    for r_idx, (T_lo, T_hi, n_peaks) in enumerate(decon_regions or [], start=1):
+        try:
+            (a_pre, b_pre), (a_post, b_post) = fit_region_baseline(
+                run.T, sm.w_smooth, T_lo, T_hi
+            )
+        except ValueError as exc:
+            print(f"[warn] {run.label}: decon region {r_idx} skipped: {exc}",
+                  file=sys.stderr)
+            continue
+
+        mask = (run.T >= T_lo) & (run.T <= T_hi)
+        T_evt = run.T[mask]
+        w_evt = sm.w_smooth[mask]
+        dwdT_evt = dwdT[mask]
+        if len(T_evt) < 4 * n_peaks:
+            print(f"[warn] {run.label}: decon region {r_idx} too narrow for "
+                  f"{n_peaks} peaks", file=sys.stderr)
+            continue
+
+        peaks_by_mode: dict[str, list] = {}
+        y_by_mode: dict[str, np.ndarray] = {}
+        for mode in _BASELINE_MODES:
+            B = baseline_dtg(T_evt, w_evt, a_pre, b_pre, a_post, b_post, mode)
+            y = -(dwdT_evt - B)
+            y_by_mode[mode] = y
+            try:
+                peaks_by_mode[mode] = deconvolve(T_evt, y, n_peaks)
+            except RuntimeError as exc:
+                print(f"[warn] {run.label}: decon region {r_idx} mode {mode}: {exc}",
+                      file=sys.stderr)
+                peaks_by_mode[mode] = []
+
+        # Pair deconvolved peaks across modes by ascending T0 (already sorted).
+        max_peaks = max((len(p) for p in peaks_by_mode.values()), default=0)
+        for k in range(max_peaks):
+            row = _empty_event_row(run.source.name, run.label)
+            row.update({
+                "event": f"decon-R{r_idx}-P{k+1}",
+                "event_kind": "deconvolved",
+                "event_start_T_C": T_lo,
+                "event_end_T_C": T_hi,
+            })
+            # Take canonical T0/W/b/A from the linear mode (or first non-empty).
+            canonical = (
+                peaks_by_mode["linear"]
+                or peaks_by_mode["constant"]
+                or peaks_by_mode["alpha"]
+            )
+            if k < len(canonical):
+                p = canonical[k]
+                row["peak_T_C"] = p.T0
+                row["peak_dwdT_pct_per_C"] = -p.A
+                row["fwhm_C"] = p.W
+                row["asymmetry_b"] = p.b
+            for mode in _BASELINE_MODES:
+                if k < len(peaks_by_mode[mode]):
+                    row[_BASELINE_COLS[mode]] = peaks_by_mode[mode][k].area
+            decon_rows.append(row)
+
+        _plot_deconvolution(
+            T_evt, y_by_mode, peaks_by_mode,
+            run.label, r_idx,
+            out_dir / f"{run.label}_decon_R{r_idx}.png",
         )
 
-    pd.DataFrame(event_rows).to_csv(
+    pd.DataFrame(event_rows + decon_rows).to_csv(
         out_dir / f"{run.label}_events.csv", index=False
     )
 
@@ -102,8 +252,27 @@ def process_one(
         "durbin_watson": sm.durbin_watson,
         "residual_std": sm.residual_std,
         "n_events": len(events),
-        "_event_rows": event_rows,
+        "n_decon_peaks": len(decon_rows),
+        "_event_rows": event_rows + decon_rows,
     }
+
+
+def _parse_decon_region(s: str) -> tuple[float, float, int]:
+    parts = [tok.strip() for tok in s.split(",")]
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError(
+            f"--deconvolve-region expects 'Tlo,Thi,Npeaks', got {s!r}"
+        )
+    try:
+        Tlo, Thi = float(parts[0]), float(parts[1])
+        N = int(parts[2])
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"--deconvolve-region parse error: {exc}")
+    if Thi <= Tlo:
+        raise argparse.ArgumentTypeError(f"Thi must exceed Tlo in {s!r}")
+    if N < 1:
+        raise argparse.ArgumentTypeError(f"Npeaks must be ≥ 1 in {s!r}")
+    return Tlo, Thi, N
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -180,6 +349,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Width (°C) of the linear baseline fit window at each event edge.",
     )
 
+    g_dec = p.add_argument_group("deconvolution")
+    g_dec.add_argument(
+        "--deconvolve-region",
+        action="append",
+        type=_parse_decon_region,
+        default=[],
+        metavar="Tlo,Thi,N",
+        help="Fit a sum of N Frazer-Suzuki peaks to the baseline-corrected DTG "
+             "over [Tlo, Thi] °C. May be repeated for multiple regions. "
+             "Results land in <label>_events.csv as event_kind='deconvolved' "
+             "rows, and a diagnostic plot is written per region per file.",
+    )
+
     args = p.parse_args(argv)
 
     if args.sg_window_max <= args.sg_window_min:
@@ -209,6 +391,7 @@ def main(argv: list[str] | None = None) -> int:
         peak_min_separation_C=args.peak_min_sep,
         baseline_exit_threshold_frac=args.baseline_threshold,
         baseline_fit_width_C=args.baseline_width,
+        decon_regions=args.deconvolve_region,
     )
 
     summary_rows: list[dict] = []
@@ -218,8 +401,12 @@ def main(argv: list[str] | None = None) -> int:
             info = process_one(file_path, label, out_dir, **tunables)
             all_event_rows.extend(info.pop("_event_rows"))
             summary_rows.append(info)
+            decon_note = (
+                f", {info.get('n_decon_peaks', 0)} decon peak(s)"
+                if args.deconvolve_region else ""
+            )
             print(
-                f"[ok]   {file_path.name}: {info['n_events']} event(s), "
+                f"[ok]   {file_path.name}: {info['n_events']} event(s){decon_note}, "
                 f"SG window = {info['sg_window_C']:.2f} °C"
             )
         except Exception as exc:

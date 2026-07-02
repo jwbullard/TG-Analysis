@@ -110,19 +110,28 @@ def detect_events(
 
         # Pre-baseline: walk left from the peak until |DTG| drops below thr,
         # then fit a fixed-width window ending at that crossing point.
+        # If no quiet point exists before the adjacent peak (crowded events,
+        # e.g. cement paste below 200 °C), fall back to the inter-peak DTG
+        # minimum — the closest thing to a baseline that exists locally.
         left_bound = 0 if k == 0 else int(peaks[k - 1])
         i = int(p_idx) - 1
         while i > left_bound and mag[i] > thr:
             i -= 1
+        if i <= left_bound and mag[max(i, left_bound) + 1] > thr:
+            # No quiet point found; use inter-peak DTG minimum as the anchor.
+            i = int(left_bound + 1 + np.argmin(mag[left_bound + 1 : int(p_idx)]))
         end_pre = i + 1
         start_pre = max(left_bound, end_pre - fit_width_pts)
 
         # Post-baseline: walk right until |DTG| drops below thr; fit a
-        # fixed-width window starting at the crossing point.
+        # fixed-width window starting at the crossing point. Same fallback
+        # as above when no quiet point exists before the next peak.
         right_bound = len(T) - 1 if k == len(peaks) - 1 else int(peaks[k + 1])
         j = int(p_idx) + 1
         while j < right_bound and mag[j] > thr:
             j += 1
+        if j >= right_bound and mag[min(j, right_bound) - 1] > thr:
+            j = int(p_idx + 1 + np.argmin(mag[int(p_idx) + 1 : right_bound]))
         start_post = j
         end_post = min(right_bound + 1, start_post + fit_width_pts)
 

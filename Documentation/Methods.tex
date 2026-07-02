@@ -42,13 +42,13 @@ the sample mass $W$ as a function of temperature $T$. Every chemical
 event that releases or absorbs mass --- water released from a hydrate,
 $\mathrm{CO}_2$ released from a carbonate, oxygen taken up by a metal,
 and so on --- appears as a step in $W(T)$, sometimes sharp, sometimes
-sluggish, sometimes piled on top of a neighbour.
+sluggish, sometimes piled on top of a neighbor.
 
 What we want from the trace is, for each chemical event:
 \begin{itemize}
   \item where it happens (a characteristic temperature),
   \item how much mass it accounts for (in \% of the starting mass),
-  \item and, when neighbouring events overlap, a defensible way to
+  \item and, when neighboring events overlap, a defensible way to
         attribute mass to each.
 \end{itemize}
 
@@ -71,11 +71,11 @@ drift has real physical sources, not just measurement error:
         but the cancellation is imperfect, especially when sample
         geometry differs from the blank.
   \item \emph{Sample-holder expansion.} The crucible and balance arm
-        expand thermally; the centre of mass shifts; the apparent
+        expand thermally; the center of mass shifts; the apparent
         weight drifts.
   \item \emph{Slow parallel processes.} Adsorbed water from atmospheric
         humidity desorbing over a wide temperature range; trace
-        organic contaminants oxidising; and so on. These look like
+        organic contaminants oxidizing; and so on. These look like
         drift because they are too slow to register as a discrete
         event.
 \end{itemize}
@@ -113,8 +113,8 @@ compute.
 
 The Savitzky--Golay (SG) filter is the standard remedy. Around each
 sample point it fits a polynomial of order $p$ (we use $p=3$) to the
-$2k+1$ nearest neighbours by ordinary least squares, then evaluates
-that polynomial at the centre point to get the smoothed value. The
+$2k+1$ nearest neighbors by ordinary least squares, then evaluates
+that polynomial at the center point to get the smoothed value. The
 crucial property is that the polynomial coefficients also give the
 smoothed \emph{derivatives} consistently: instead of differentiating a
 noisy curve, we read off the analytical derivative of the local fit.
@@ -148,7 +148,7 @@ The seven numbers $h_{-3}, h_{-2}, \ldots, h_{+3}$ are fixed: they
 depend on the half-width $k$ and the polynomial order $p$, but not on
 the data values. You can compute them once and store them in a table.
 The indices $j = -k, \ldots, +k$ are the ``offsets'' --- the
-positions of the window's points relative to its centre, $i$. On a
+positions of the window's points relative to its center, $i$. On a
 uniform grid with spacing $\Delta T$, offset $j$ corresponds to the
 temperature $T_i + j\,\Delta T$.
 
@@ -206,7 +206,7 @@ autocorrelation,
 where $\bar r$ is the mean residual (the bar denotes a sample
 average, in the standard statistics convention). Subtracting $\bar r$
 from each residual removes any constant offset before measuring the
-correlation, so $\rho_1$ depends only on whether neighbouring
+correlation, so $\rho_1$ depends only on whether neighboring
 residuals move together, not on whether their average happens to be a
 hair above or below zero.
 For truly white residuals, $\rho_1 \approx 0$; for over-smoothed
@@ -256,7 +256,7 @@ below a small fraction of the peak amplitude --- typically
 \qty{2}{\percent}.  We
 call those crossing temperatures the \emph{event extent}: the range
 over which we will integrate mass loss for that event. If we walk all
-the way to a neighbouring peak without ever finding a quiet point ---
+the way to a neighboring peak without ever finding a quiet point ---
 common in crowded data like hydrated cement paste --- we fall back to
 the inter-peak DTG minimum, which is the closest local approximation
 to a baseline that exists.
@@ -363,7 +363,7 @@ magnitude). The intersections with the pre- and post-baselines define
 $T_{\mathrm{on}}$ and $T_{\mathrm{end}}$. Mass loss $\Delta W$ is the
 pre-baseline value at $T_{\mathrm{on}}$ minus the post-baseline value
 at $T_{\mathrm{end}}$. The under-event drift never has to be
-explicitly modelled because each baseline is only evaluated at its own
+explicitly modeled because each baseline is only evaluated at its own
 end.}
 \label{fig:tangent}
 \end{figure}
@@ -513,7 +513,7 @@ sides.  In a hydrated cement paste below \qty{200}{\celsius}, the
 calcium-silicate-hydrate, ettringite, and aluminate hydrates dehydrate
 on top of each other; there is no quiet region between them. The peak
 detector picks up one feature where there are really three or four,
-the integration extent sweeps up neighbouring chemistry, and the
+the integration extent sweeps up neighboring chemistry, and the
 reported number is structurally wrong, not just imprecise.
 
 The fix is to model the region as a sum of asymmetric peak shapes and
@@ -626,7 +626,7 @@ Honest options when this happens are:
 \begin{itemize}
   \item \emph{Multi-rate (isoconversional) experiments.} Ramp the same
         sample at, e.g., \qtylist{5;10;20;40}{\kelvin\per\minute},
-        and analyse the apparent activation energy as a function of
+        and analyze the apparent activation energy as a function of
         $\alpha$. Events with different kinetic signatures separate
         in the multi-rate data even if they overlap at any single
         rate. This is the approach the ICTAC kinetics committee

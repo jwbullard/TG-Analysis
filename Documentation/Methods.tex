@@ -2,6 +2,7 @@
 
 \usepackage[letterpaper, margin=1in]{geometry}
 \usepackage{amsmath, amssymb}
+\usepackage{siunitx}
 \usepackage{microtype}
 \usepackage[hidelinks, colorlinks=true, urlcolor=blue!50!black]{hyperref}
 \usepackage{xcolor}
@@ -14,7 +15,7 @@
 \setlist{itemsep=2pt, topsep=4pt}
 
 \newcommand{\dwdT}{\mathrm{d}W/\mathrm{d}T}
-\newcommand{\degC}{^{\circ}\mathrm{C}}
+% \degC removed 2026-07-02; use siunitx \unit{\celsius} or \qty{...}{\celsius} instead.
 \newcommand{\code}[1]{\texttt{#1}}
 
 \title{TG-Analysis: a guided tour of the methods}
@@ -36,7 +37,7 @@ the methods to feel obvious by the end, not opaque.
 \section{What the instrument gives us, what we want from it}
 
 A thermogravimetric analyzer (TGA) heats a sample at a constant rate
-(commonly $10\,\mathrm{K/min}$) under controlled atmosphere, and records
+(commonly \qty{10}{\kelvin\per\minute}) under controlled atmosphere, and records
 the sample mass $W$ as a function of temperature $T$. Every chemical
 event that releases or absorbs mass --- water released from a hydrate,
 $\mathrm{CO}_2$ released from a carbonate, oxygen taken up by a metal,
@@ -65,7 +66,7 @@ drift has real physical sources, not just measurement error:
         surrounding gas. As the furnace heats, the gas density falls
         (roughly as $1/T$ at fixed pressure), so the pan's apparent
         weight increases by a smooth amount of order
-        $10^{-3}\,\%$ per $\degC$ over a typical ramp. The
+        \qty{e-3}{\percent\per\celsius} over a typical ramp.  The
         instrument can be ``blank-corrected'' to cancel most of this,
         but the cancellation is imperfect, especially when sample
         geometry differs from the blank.
@@ -100,8 +101,9 @@ A finite-difference estimate of the derivative is
 If $W$ carries noise of standard deviation $\sigma$, the numerator
 contains noise of $\sqrt{2}\,\sigma$, and dividing by the small grid
 spacing $T_{i+1}-T_{i-1}$ amplifies it. The smaller the spacing, the
-worse it gets: noise of $0.001\,\%$ in $W$ at $0.05\,\degC$ spacing
-becomes noise of about $0.02\,\%/\degC$ in $\dwdT$, comparable to the
+worse it gets: noise of \qty{0.001}{\percent} in $W$ at
+\qty{0.05}{\celsius} spacing becomes noise of about
+\qty{0.02}{\percent\per\celsius} in $\dwdT$, comparable to the
 weakest events we want to see. Naive numerical differentiation of TGA
 data is therefore unusable; some kind of smoothing is required, and it
 must be done in a way that does not destroy the derivative we want to
@@ -209,14 +211,15 @@ residuals move together, not on whether their average happens to be a
 hair above or below zero.
 For truly white residuals, $\rho_1 \approx 0$; for over-smoothed
 residuals, $\rho_1 > 0$. We sweep candidate window widths between
-$0.3\,\degC$ and $5\,\degC$, compute $\rho_1$ for each, and pick the
+\qtylist{0.3;5}{\celsius}, compute $\rho_1$ for each, and pick the
 \emph{largest} window whose $|\rho_1|$ stays below a small threshold
 (we use 0.05). That is the most aggressive smoothing that has not yet
 started to eat real signal.
 
-In practice on $10\,\mathrm{K/min}$ runs of $\mathrm{CaCO}_3$ powders
-the procedure picks windows of $0.6$--$1.2\,\degC$; for noisier
-hydrated-cement-paste data it can grow to $4$--$5\,\degC$. The chosen
+In practice on \qty{10}{\kelvin\per\minute} runs of $\mathrm{CaCO}_3$
+powders the procedure picks windows of \qtyrange{0.6}{1.2}{\celsius};
+for noisier hydrated-cement-paste data it can grow to
+\qtyrange{4}{5}{\celsius}.  The chosen
 width is reported per file.
 
 \medskip
@@ -242,13 +245,15 @@ alone.
 With a clean DTG in hand, events are local maxima of $|\dwdT|$. We use
 \code{scipy.signal.find\_peaks} with two thresholds:
 \begin{itemize}
-  \item a \emph{prominence} threshold (default $2\,\%$ of the run's
-        maximum $|\dwdT|$) to filter out noise peaks, and
-  \item a \emph{minimum separation} (default $20\,\degC$) so a single
-        decomposition with internal wiggles is not double-counted.
+  \item a \emph{prominence} threshold (default \qty{2}{\percent} of
+        the run's maximum $|\dwdT|$) to filter out noise peaks, and
+  \item a \emph{minimum separation} (default \qty{20}{\celsius}) so
+        a single decomposition with internal wiggles is not
+        double-counted.
 \end{itemize}
 For each surviving peak we walk outward in $T$ until $|\dwdT|$ drops
-below a small fraction of the peak amplitude --- typically $2\,\%$. We
+below a small fraction of the peak amplitude --- typically
+\qty{2}{\percent}.  We
 call those crossing temperatures the \emph{event extent}: the range
 over which we will integrate mass loss for that event. If we walk all
 the way to a neighbouring peak without ever finding a quiet point ---
@@ -425,7 +430,7 @@ the slope transition concentrates there instead of spreading
 uniformly. This is the Borchardt--Daniels construction recommended by
 the ICTAC kinetics committee. It is self-consistent when the drift is
 \emph{tied to the state of the sample} --- a sample that has lost
-$44\,\%$ of its mass has different buoyancy and geometry than the
+\qty{44}{\percent} of its mass has different buoyancy and geometry than the
 intact one, so the drift contribution genuinely should change as the
 reaction proceeds.
 
@@ -504,7 +509,7 @@ on real data.
 \section{When events overlap: deconvolution}
 
 Everything above assumes that each event has quiet baseline on both
-sides. In a hydrated cement paste below $200\,\degC$, the
+sides.  In a hydrated cement paste below \qty{200}{\celsius}, the
 calcium-silicate-hydrate, ettringite, and aluminate hydrates dehydrate
 on top of each other; there is no quiet region between them. The peak
 detector picks up one feature where there are really three or four,
@@ -527,7 +532,7 @@ Frazer--Suzuki form
 \]
 Its four parameters have direct interpretations:
 \begin{itemize}
-  \item $A$ is the peak amplitude (in $\%/\degC$).
+  \item $A$ is the peak amplitude (in \unit{\percent\per\celsius}).
   \item $T_0$ is the peak temperature.
   \item $W$ is the full width at half maximum (exactly so in the
         symmetric limit $b \to 0$).
@@ -547,9 +552,10 @@ shapes, which are technically non-zero everywhere --- they decay
 exponentially but never quite reach zero. For deconvolution the
 distinction matters in practice: a Frazer--Suzuki peak placed at
 $T_0$ contributes exactly zero at temperatures well beyond its own
-extent, so a fit on the carbonate region around $700\,\degC$ cannot
-be contaminated by the residual exponential tail of a peak the fit
-also placed at, say, $200\,\degC$. Each peak influences only the
+extent, so a fit on the carbonate region around \qty{700}{\celsius}
+cannot be contaminated by the residual exponential tail of a peak the
+fit also placed at, say, \qty{200}{\celsius}.  Each peak influences
+only the
 points within its own bounded range.
 
 \subsection{Fitting a sum of peaks}
@@ -563,33 +569,40 @@ and fit the $4N$ parameters by nonlinear least squares
 (\code{scipy.optimize.curve\_fit}). Initial guesses for $T_{0,i}$ come
 from a peak detector on $y_{\mathrm{model}}$ itself; widths default
 to a fraction of the region width; asymmetries start at zero. Bounds
-keep $A \ge 0$, $W \ge 1\,\degC$, and $|b| \le 0.95$ to avoid
+keep $A \ge 0$, $W \ge \qty{1}{\celsius}$, and $|b| \le 0.95$ to avoid
 degenerate fits.
 
 The mass loss attributed to peak $i$ is its integral, computed
 numerically on the same $T$ grid. The peak integrals sum to the total
 integrated mass loss for the region under the chosen baseline.
 
-\subsection{The region must include quiet pads}
+\subsection{The region must extend into quiescent baseline flanks}
 
 By far the most common deconvolution mistake is choosing a region that
-starts or ends inside a tail of a real event. The package fits the
-pre-baseline to a $20\,\degC$-wide window just below $T_{\mathrm{lo}}$
-and the post-baseline to a $20\,\degC$-wide window just above
-$T_{\mathrm{hi}}$. If either of those windows is contaminated by
-ongoing chemistry, the baseline slope is wrong, the corrected DTG is
-wrong, and the deconvolved per-peak masses are nonsense --- even
-though the fit converged.
+starts or ends inside the tail of a real event.  We use the term
+\emph{quiescent baseline flank} for the interval of temperature on
+either side of the fitted region in which the mass signal is dominated
+by slow, near-linear drift and no active decomposition; this is the
+substrate on which a defensible pre- or post-event baseline can be
+fitted.  The package fits the pre-baseline to a
+\qty{20}{\celsius}-wide window just below $T_{\mathrm{lo}}$ and the
+post-baseline to a \qty{20}{\celsius}-wide window just above
+$T_{\mathrm{hi}}$.  If either of those windows is contaminated by
+ongoing chemistry --- i.e., if it does not lie in a quiescent flank
+--- the baseline slope is wrong, the corrected DTG is wrong, and the
+deconvolved per-peak masses are nonsense, even though the fit
+converged.
 
-A worked example. On a clean calcite (theoretical mass loss
-$43.97\,\%$), a deconvolution with $T_{\mathrm{lo}} = 700\,\degC$,
-which sits well inside the rising edge of the decarbonation event,
-gives per-peak mass losses of about $21$, $27$, and $27\,\%$ under the
-three baseline modes. Widening to $T_{\mathrm{lo}} = 540\,\degC$ ---
-which puts the pre-pad in a genuinely quiet region --- gives $43.6$,
-$43.7$, $43.7\,\%$: a $0.3\,\%$ spread, agreeing with theory. The fit
-converged in both cases. The only difference is whether the pre-pad
-saw chemistry or not.
+A worked example.  On a clean calcite (theoretical mass loss
+\qty{43.97}{\percent}), a deconvolution with
+$T_{\mathrm{lo}} = \qty{700}{\celsius}$, which sits well inside the
+rising edge of the decarbonation event, gives per-peak mass losses of
+approximately \qtylist{21;27;27}{\percent} under the three baseline
+modes.  Widening to $T_{\mathrm{lo}} = \qty{540}{\celsius}$ --- which
+puts the leading window into a genuinely quiescent flank --- gives
+\qtylist{43.6;43.7;43.7}{\percent}: a \qty{0.3}{\percent} spread,
+agreeing with theory.  The fit converged in both cases.  The only
+difference is whether the leading window saw chemistry or not.
 
 \section{What deconvolution cannot do}
 
@@ -612,7 +625,7 @@ Honest options when this happens are:
 
 \begin{itemize}
   \item \emph{Multi-rate (isoconversional) experiments.} Ramp the same
-        sample at, e.g., $5$, $10$, $20$, and $40\,\mathrm{K/min}$,
+        sample at, e.g., \qtylist{5;10;20;40}{\kelvin\per\minute},
         and analyse the apparent activation energy as a function of
         $\alpha$. Events with different kinetic signatures separate
         in the multi-rate data even if they overlap at any single
@@ -647,17 +660,17 @@ polymorphic transformation to calcite well before
 $\mathrm{CaCO}_3 \to \mathrm{CaO} + \mathrm{CO}_2$:
 
 \begin{itemize}
-  \item Vaterite $\to$ calcite, roughly $320$--$460\,\degC$.
-  \item Aragonite $\to$ calcite, roughly $380$--$490\,\degC$.
+  \item Vaterite $\to$ calcite, roughly \qtyrange{320}{460}{\celsius}.
+  \item Aragonite $\to$ calcite, roughly \qtyrange{380}{490}{\celsius}.
   \item $\mathrm{CaCO}_3 \to \mathrm{CaO} + \mathrm{CO}_2$ (calcite),
-        roughly $600$--$800\,\degC$, depending on crystallinity,
+        roughly \qtyrange{600}{800}{\celsius}, depending on crystallinity,
         partial pressure of $\mathrm{CO}_2$, and heating rate.
 \end{itemize}
 
 Whatever polymorph you put in the pan, by the time decarbonation
 happens the sample is calcite. The decarbonation DTG cannot, in
 principle, distinguish ``calcite that has always been calcite'' from
-``aragonite that became calcite at $430\,\degC$.'' Coupled techniques
+``aragonite that became calcite at \qty{430}{\celsius}.''  Coupled techniques
 --- room-temperature XRD, FT-Raman, or FTIR --- are required for
 polymorph identification. This has been documented since
 Passe-Coutrin \emph{et al.} (1992) and is the explicit subject of
@@ -667,7 +680,7 @@ standard reference.
 The polymorph transformations themselves \emph{are} visible in DSC
 (they are weakly exothermic), and they show up as small features in
 DTG if the polymorphic transition is accompanied by water release
-from a hydrate carbonate, but the $700\,\degC$ decarbonation peak by
+from a hydrate carbonate, but the \qty{700}{\celsius} decarbonation peak by
 itself is silent on which polymorph you started with.
 
 \section{Method agreement as a diagnostic}
@@ -687,9 +700,9 @@ Putting all of this together, the workflow the package supports is:
         chemistry, and no baseline choice can fix it; the integration
         limits themselves are wrong.
   \item In that case, run a deconvolution over a region wide enough
-        to include the event \emph{and} $20\,\degC$ of quiet baseline
-        pad on each side, with $N$ peaks chosen to match what the DTG
-        plot suggests.
+        to include the event \emph{and} \qty{20}{\celsius} of
+        quiescent baseline flank on each side, with $N$ peaks chosen
+        to match what the DTG plot suggests.
   \item Confirm that the per-peak masses agree across the three
         baseline modes. If they do, those numbers are trustworthy. If
         they still disagree, widen the region or reconsider $N$.

@@ -1,0 +1,49 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: tg-analysis
+abstract: >-
+  A Python package for thermogravimetric (TGA) signal denoising with
+  Savitzky-Golay smoothing (residual-whiteness window selection),
+  mass-loss event detection, five candidate mass-loss estimators
+  (endpoint subtraction, ICTAC sloped tangent, and three DTG-area
+  baseline modes: constant, linear-blend, alpha-blend), and
+  Frazer-Suzuki peak deconvolution of overlapping decomposition events.
+type: software
+version: 0.1.0
+date-released: "2026-07-02"
+license: MIT
+repository-code: "https://github.com/jwbullard/TG-Analysis"
+url: "https://github.com/jwbullard/TG-Analysis"
+authors:
+  - given-names: Meihe
+    family-names: Zhang
+    affiliation: "Department of Materials Science and Engineering, Texas A&M University"
+    # orcid: "https://orcid.org/XXXX-XXXX-XXXX-XXXX"  # add if available
+  - given-names: "Jeffrey W."
+    family-names: Bullard
+    email: jwbullard@tamu.edu
+    affiliation: "Departments of Civil and Environmental Engineering and Materials Science and Engineering, Texas A&M University"
+    # orcid: "https://orcid.org/XXXX-XXXX-XXXX-XXXX"  # add if available
+keywords:
+  - thermogravimetric analysis
+  - TGA
+  - Savitzky-Golay smoothing
+  - baseline correction
+  - Frazer-Suzuki deconvolution
+  - peak deconvolution
+  - cementitious materials
+  - calcium carbonate
+  - portlandite
+preferred-citation:
+  type: article
+  title: >-
+    Baseline-method disagreement as a diagnostic for peak overlap in
+    quantitative thermogravimetric analysis
+  authors:
+    - given-names: Meihe
+      family-names: Zhang
+    - given-names: "Jeffrey W."
+      family-names: Bullard
+  journal: "Thermochimica Acta"
+  year: 2026
+  status: in-preparation

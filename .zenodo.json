@@ -1,0 +1,26 @@
+{
+  "title": "tg-analysis: A Python package for thermogravimetric signal denoising, baseline correction, and Frazer-Suzuki peak deconvolution",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Zhang, Meihe",
+      "affiliation": "Texas A&M University"
+    },
+    {
+      "name": "Bullard, Jeffrey W.",
+      "affiliation": "Texas A&M University"
+    }
+  ],
+  "description": "<p>A Python package for thermogravimetric (TGA) signal denoising with Savitzky-Golay smoothing (residual-whiteness window selection), mass-loss event detection, five candidate mass-loss estimators (endpoint subtraction, ICTAC sloped tangent, and three DTG-area baseline modes: constant, linear-blend, alpha-blend), and Frazer-Suzuki peak deconvolution of overlapping decomposition events.</p><p>Applied to reference calcite and hydrated cement paste specimens in the Thermochimica Acta short communication by Zhang and Bullard (in preparation, 2026).</p>",
+  "access_right": "open",
+  "license": "MIT",
+  "keywords": [
+    "thermogravimetric analysis",
+    "Savitzky-Golay smoothing",
+    "baseline correction",
+    "Frazer-Suzuki deconvolution",
+    "cementitious materials",
+    "calcium carbonate",
+    "portlandite"
+  ]
+}

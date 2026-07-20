@@ -8,8 +8,10 @@ Two CSV flavors are handled transparently:
     then a units row ('min,°C,mg,%,...'), then data. Two columns named
     'Weight' (mg and %) are disambiguated by the units row.
 
-Excel files (.xlsx, .xls) are passed through pandas' Excel reader as
-before.
+Excel files (.xlsx, .xls) are passed through pandas' Excel reader.
+TA Instruments SDT 650 full exports carry two 'Weight' columns (mg and
+%) with no units row; a value-range heuristic disambiguates them (first
+non-NaN value in [95, 100.5] -> %, else mg).
 
 Column names are matched by keyword so vendor variations ('Sample
 Temperature', 'Weight %', 'Deriv. Weight', 'DTG', etc.) are picked up
@@ -121,9 +123,45 @@ def _read_csv(path: Path) -> pd.DataFrame:
     return df.apply(pd.to_numeric, errors="coerce")
 
 
+def _disambiguate_weight_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename bare 'Weight' columns to 'Weight (%)' or 'Weight (mg)'.
+
+    TA Instruments SDT 650 xlsx exports emit sample mass twice: once in
+    mg and once as a percentage of the initial mass. Both columns are
+    literally headed 'Weight' with no units row, so pandas renames the
+    second to 'Weight.1'. Neither carries a token that the downstream
+    column detector can key on. Given exactly two bare 'Weight' columns,
+    the one with the larger first non-NaN value is the % (bounded at
+    100 and typically starting there, though hydrated pastes may have
+    lost a few percent during the pre-ramp equilibration hold); the
+    smaller one is mg (typical sample loading 20-70 mg on the SDT 650).
+    Derivative and heat-flow columns are ignored.
+    """
+    mass_cols = [
+        c for c in df.columns
+        if str(c).lower().strip().startswith("weight")
+        and "deriv" not in str(c).lower()
+        and "dtg" not in str(c).lower()
+        and "heat" not in str(c).lower()
+        and "%" not in str(c)
+        and "mg" not in str(c).lower()
+    ]
+    if len(mass_cols) != 2:
+        return df
+    first_vals: list[tuple[str, float]] = []
+    for col in mass_cols:
+        series = df[col].dropna()
+        if series.empty:
+            return df
+        first_vals.append((col, float(series.iloc[0])))
+    (col_a, val_a), (col_b, val_b) = first_vals
+    pct_col, mg_col = (col_a, col_b) if val_a > val_b else (col_b, col_a)
+    return df.rename(columns={pct_col: "Weight (%)", mg_col: "Weight (mg)"})
+
+
 def _read_raw(path: Path) -> pd.DataFrame:
     if path.suffix.lower() in (".xlsx", ".xls"):
-        return pd.read_excel(path)
+        return _disambiguate_weight_columns(pd.read_excel(path))
     if path.suffix.lower() == ".csv":
         return _read_csv(path)
     raise ValueError(f"Unsupported file extension: {path.suffix}")

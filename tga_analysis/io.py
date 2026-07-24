@@ -10,8 +10,10 @@ Two CSV flavors are handled transparently:
 
 Excel files (.xlsx, .xls) are passed through pandas' Excel reader.
 TA Instruments SDT 650 full exports carry two 'Weight' columns (mg and
-%) with no units row; a value-range heuristic disambiguates them (first
-non-NaN value in [95, 100.5] -> %, else mg).
+%). Some exports include a units row directly under the header
+('min,°C,mg,%,...') and some do not; both are handled. When the units
+row is present it is used to rename the weight columns; otherwise the
+first non-NaN value picks the % (larger) vs the mg (smaller).
 
 Column names are matched by keyword so vendor variations ('Sample
 Temperature', 'Weight %', 'Deriv. Weight', 'DTG', etc.) are picked up
@@ -159,9 +161,43 @@ def _disambiguate_weight_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns={pct_col: "Weight (%)", mg_col: "Weight (mg)"})
 
 
+def _strip_units_row(df: pd.DataFrame) -> pd.DataFrame:
+    """If row 0 is a units row, use it to rename Weight columns and drop it.
+
+    Some TA Instruments SDT 650 xlsx exports emit a units row directly
+    under the column-header row ('min, °C, mg, %, % / °C, mW, ...').
+    Others emit only the header. When present, the units row lets us
+    disambiguate the two identically-named 'Weight' columns
+    unambiguously (rather than relying on the value-range heuristic),
+    but pandas otherwise treats it as string data and downstream numeric
+    coercion fails on values like 'mg'.
+    """
+    if len(df) == 0 or _looks_numeric(df.iloc[0]):
+        return df
+    units = df.iloc[0].astype(str).tolist()
+    df = df.iloc[1:].reset_index(drop=True)
+    new_cols: list[str] = []
+    for col, unit in zip(df.columns, units):
+        base = str(col).strip()
+        unit_s = unit.strip()
+        if base.lower().startswith("weight") and not (
+            "deriv" in base.lower() or "dtg" in base.lower()
+        ):
+            if "%" in unit_s:
+                new_cols.append("Weight (%)")
+            elif "mg" in unit_s.lower():
+                new_cols.append("Weight (mg)")
+            else:
+                new_cols.append(f"{base} ({unit_s})")
+        else:
+            new_cols.append(base)
+    df.columns = new_cols
+    return df.apply(pd.to_numeric, errors="coerce")
+
+
 def _read_raw(path: Path) -> pd.DataFrame:
     if path.suffix.lower() in (".xlsx", ".xls"):
-        return _disambiguate_weight_columns(pd.read_excel(path))
+        return _disambiguate_weight_columns(_strip_units_row(pd.read_excel(path)))
     if path.suffix.lower() == ".csv":
         return _read_csv(path)
     raise ValueError(f"Unsupported file extension: {path.suffix}")

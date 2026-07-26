@@ -9,8 +9,8 @@ abstract: >-
   baseline modes: constant, linear-blend, alpha-blend), and
   Frazer-Suzuki peak deconvolution of overlapping decomposition events.
 type: software
-version: 0.1.0
-date-released: "2026-07-02"
+version: 0.1.1
+date-released: "2026-07-24"
 doi: "10.5281/zenodo.21144540"
 license: MIT
 repository-code: "https://github.com/jwbullard/TG-Analysis"

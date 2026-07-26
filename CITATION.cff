@@ -11,7 +11,7 @@ abstract: >-
 type: software
 version: 0.1.1
 date-released: "2026-07-24"
-doi: "10.5281/zenodo.21144540"
+doi: "10.5281/zenodo.21144539"
 license: MIT
 repository-code: "https://github.com/jwbullard/TG-Analysis"
 url: "https://github.com/jwbullard/TG-Analysis"
